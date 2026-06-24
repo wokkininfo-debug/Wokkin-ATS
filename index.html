@@ -59,8 +59,9 @@
         .form-grid-5 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .form-group { display: flex; flex-direction: column; gap: 6px; }
         .form-group label { font-size: 13px; font-weight: 600; color: #475569; }
-        .form-group input, .form-group select { padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; font-size: 14px; background: #f8fafc; width: 100%;}
-        .form-group input:focus, .form-group select:focus { border-color: var(--accent); background: white; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);}
+        .form-group input, .form-group select, .form-group textarea { padding: 10px; border: 1px solid var(--border); border-radius: 6px; outline: none; font-size: 14px; background: #f8fafc; width: 100%; font-family: inherit;}
+        .form-group textarea { resize: vertical; min-height: 80px; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--accent); background: white; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);}
         
         /* Interactive Buttons */
         .btn { background-color: var(--accent); color: white; border: none; padding: 10px 22px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; transition: 0.2s; display: inline-flex; align-items: center; justify-content: center; gap: 6px;}
@@ -235,6 +236,10 @@
                         <div class="form-group"><label>Initial Status</label><select id="c-status" class="dyn-status"></select></div>
                         <div class="form-group"><label>Sourcing Channel</label><select id="c-channel" class="dyn-channel"></select></div>
                     </div>
+                    <div class="form-group" style="margin-bottom: 20px;">
+                        <label>Notes / Remarks (ملاحظات إضافية)</label>
+                        <textarea id="c-notes" placeholder="أضف أي ملاحظات حول المرشح هنا..."></textarea>
+                    </div>
                     <button type="submit" class="btn" id="c-submit-btn">Register Candidate</button>
                     <button type="button" class="btn btn-warning" style="display:none;" id="c-cancel-btn" onclick="resetCandidateForm()">Cancel Edit</button>
                 </form>
@@ -329,8 +334,12 @@
             <span class="close-modal" onclick="closeModal('historyModal')">&times;</span>
             <h3 style="margin-bottom:10px; color: var(--accent);" id="h-cand-name"> Candidate Timeline</h3>
             <p id="h-cand-meta" style="font-size:13px; color:#64748b; margin-bottom:15px; border-bottom:1px dashed var(--border); padding-bottom:10px;"></p>
+            
             <h4>Movement Log:</h4>
             <div class="timeline-container" id="historyLogContainer"></div>
+
+            <h4 style="margin-top: 25px; margin-bottom: 10px; color: var(--primary);">Candidate Notes:</h4>
+            <div id="h-cand-notes" style="font-size: 13px; color: #475569; background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid var(--border); white-space: pre-wrap; line-height: 1.5; min-height: 40px;"></div>
         </div>
     </div>
 
@@ -380,7 +389,7 @@
                 document.body.classList.add("not-logged-in");
             }
 
-            const cachedData = localStorage.getItem("wokkin_rms_production_v5");
+            const cachedData = localStorage.getItem("wokkin_rms_production_v6");
             if (cachedData) {
                 let parsed = JSON.parse(cachedData);
                 db.manpower = parsed.manpower || [];
@@ -433,14 +442,18 @@
         }
 
         // --- REFRESH BUTTON SOLID OPTIMIZATION ---
+        let refreshTimers = [];
         function refreshSystem() {
             const btn = document.getElementById('refreshBtn');
             if (btn.disabled) return; 
             
+            refreshTimers.forEach(clearTimeout);
+            refreshTimers = [];
+
             btn.disabled = true;
             btn.innerHTML = "⏳ Syncing...";
             
-            const cachedData = localStorage.getItem("wokkin_rms_production_v5");
+            const cachedData = localStorage.getItem("wokkin_rms_production_v6");
             if (cachedData) {
                 let parsed = JSON.parse(cachedData);
                 db.manpower = parsed.manpower || [];
@@ -455,18 +468,22 @@
             renderAll();
             autoGenerateManpowerFields();
             
-            btn.innerHTML = "✅ Updated";
-            btn.style.borderColor = "var(--success)";
-            
-            setTimeout(() => {
-                btn.innerHTML = "🔄 Refresh System";
-                btn.style.borderColor = "rgba(255,255,255,0.2)";
-                btn.disabled = false;
-            }, 1000);
+            let t1 = setTimeout(() => {
+                btn.innerHTML = "✅ Updated";
+                btn.style.borderColor = "var(--success)";
+                
+                let t2 = setTimeout(() => {
+                    btn.innerHTML = "🔄 Refresh System";
+                    btn.style.borderColor = "rgba(255,255,255,0.2)";
+                    btn.disabled = false;
+                }, 1000);
+                refreshTimers.push(t2);
+            }, 300);
+            refreshTimers.push(t1);
         }
 
         function saveDb() {
-            localStorage.setItem("wokkin_rms_production_v5", JSON.stringify(db));
+            localStorage.setItem("wokkin_rms_production_v6", JSON.stringify(db));
             renderAll();
         }
 
@@ -599,7 +616,7 @@
             }).join('');
         }
 
-        // --- 5. ENGINE CORE OPERATIONS: CANDIDATES MANAGEMENT (WITH FILTERS & SEARCH) ---
+        // --- 5. ENGINE CORE OPERATIONS: CANDIDATES MANAGEMENT ---
         function applyFilters() {
             activePosFilter = document.getElementById("filter-position").value;
             activeStatusFilter = document.getElementById("filter-status").value;
@@ -626,6 +643,7 @@
             const reqLink = document.getElementById("c-req-link").value;
             const initialStatus = document.getElementById("c-status").value;
             const interviewDate = document.getElementById("c-interview-date").value;
+            const notesVal = document.getElementById("c-notes").value.trim();
             const today = new Date().toISOString().split('T')[0];
             
             if(idx === "-1") {
@@ -639,6 +657,7 @@
                     "Education": document.getElementById("c-edu").value,
                     "Hiring Status": initialStatus,
                     "Channels": document.getElementById("c-channel").value,
+                    "Notes": notesVal,
                     "history": [{ status: initialStatus, date: today }]
                 };
                 db.candidates.push(record);
@@ -651,6 +670,7 @@
                 db.candidates[parseInt(idx)]["Nationality"] = document.getElementById("c-nation").value;
                 db.candidates[parseInt(idx)]["Education"] = document.getElementById("c-edu").value;
                 db.candidates[parseInt(idx)]["Channels"] = document.getElementById("c-channel").value;
+                db.candidates[parseInt(idx)]["Notes"] = notesVal;
                 
                 let currentMainStatus = db.candidates[parseInt(idx)]["Hiring Status"];
                 if(currentMainStatus !== initialStatus) {
@@ -673,6 +693,7 @@
             document.getElementById("c-edu").value = data["Education"] || '';
             document.getElementById("c-status").value = data["Hiring Status"] || '';
             document.getElementById("c-channel").value = data["Channels"] || '';
+            document.getElementById("c-notes").value = data["Notes"] || '';
             
             document.getElementById("c-edit-index").value = index;
             document.getElementById("c-submit-btn").innerText = "Update Candidate Details";
@@ -690,7 +711,6 @@
         function renderCandidatesTable() {
             const tbody = document.getElementById("candidatesTableBody");
             
-            // Apply Filters and Search Match
             let filteredCandidates = db.candidates.filter(c => {
                 let matchPos = activePosFilter === 'all' || c["Position Title"] === activePosFilter;
                 let matchStatus = activeStatusFilter === 'all' || c["Hiring Status"] === activeStatusFilter;
@@ -757,6 +777,8 @@
                     </div>
                 `).join('');
             }
+
+            document.getElementById("h-cand-notes").textContent = candidate["Notes"] || 'No additional notes provided.';
             document.getElementById("historyModal").classList.add("active");
         }
 
@@ -925,7 +947,7 @@
             let candidatesFlat = db.candidates.map(c => ({
                 "Request #": c["Request #"], "Position Title": c["Position Title"], "Candidate Name": c["Candidate Name"],
                 "Phone Number": c["Phone Number"], "First Interview Date": c["First Interview Date"] || '', "Nationality": c["Nationality"], "Education": c["Education"],
-                "Hiring Status": c["Hiring Status"], "Channels": c["Channels"]
+                "Hiring Status": c["Hiring Status"], "Channels": c["Channels"], "Notes": c["Notes"] || ''
             }));
             XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(candidatesFlat), "Candidates List");
             
@@ -1014,6 +1036,7 @@
                             "Education": (row["Education"] || 'Bachelor').toString().trim(),
                             "Hiring Status": (row["Hiring Status"] || 'First Interview').toString().trim(),
                             "Channels": (row["Channels"] || row["Channes "] || 'referral').toString().trim(),
+                            "Notes": (row["Notes"] || '').toString().trim(),
                             "history": []
                         }));
                     }
@@ -1061,3 +1084,5 @@
     </script>
 </body>
 </html>
+
+```
